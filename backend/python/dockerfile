@@ -1,0 +1,9 @@
+FROM python:3.11-slim
+
+# Dépendances système min (WeasyPrint requiert des libs supplémentaires, on le fera plus tard)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+EXPOSE 8001

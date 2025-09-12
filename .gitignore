@@ -1,0 +1,31 @@
+# Node / Front
+frontend/node_modules/
+frontend/.vite/
+frontend/.nuxt/
+frontend/dist/
+frontend/.pnpm-store/
+frontend/.env.local
+
+# PHP / Symfony
+backend/php/var/
+backend/php/vendor/
+backend/php/.env.local
+backend/php/.env.*.local
+backend/php/config/jwt/*.pem    
+backend/php/config/secrets/*/ 
+backend/php/.phpunit.result.cache
+
+# Python
+backend/python/.venv/
+backend/python/__pycache__/
+backend/python/.pytest_cache/
+
+# OS / Editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Docker
+mysql_data/
+**/*.log
