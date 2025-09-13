@@ -1,46 +1,72 @@
-# Node / Front
+# --- ENV & SECRETS (all apps) ---
+**/.env
+**/.env.*
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*id_rsa*
+*.crt
+
+# DB dumps / backups
+*.sql
+*.dump
+*.bak
+
+# --- Frontend (Vite / Vue / Nuxt) ---
 frontend/node_modules/
 frontend/.vite/
 frontend/.nuxt/
 frontend/dist/
 frontend/.pnpm-store/
 frontend/.env.local
+node_modules/
+dist/
+.vite/
+.nyc_output/
+coverage/
+.eslintcache
 
-# PHP / Symfony
+# lockfiles must be committed (do not ignore):
+!package-lock.json
+!yarn.lock
+!pnpm-lock.yaml
+!composer.lock
+
+# --- PHP / Symfony ---
 backend/php/var/
 backend/php/vendor/
 backend/php/.env.local
 backend/php/.env.*.local
-backend/php/config/jwt/*.pem    
-backend/php/config/secrets/*/ 
+backend/php/.env
+backend/php/.env.*
+backend/php/config/jwt/*
+backend/php/config/secrets/*/
 backend/php/.phpunit.result.cache
+.phpunit.result.cache
+.php-cs-fixer.cache
 
-# Python
+# --- Python / FastAPI ---
 backend/python/.venv/
 backend/python/__pycache__/
 backend/python/.pytest_cache/
 **/__pycache__/
 **/*.py[cod]
 **/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+**/htmlcov/
 
-# OS / Editors
+# --- OS / Editors ---
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 
-# Docker
+# --- Docker / logs / volumes ---
 mysql_data/
 **/*.log
-**/.env
-**/.env.*
-frontend/.env
-frontend/.env.*
-backend/php/.env
-backend/php/.env.*
-**/*id_rsa*
-**/*.key
-**/*.p12
-**/*.pfx
-**/*.jks
-**/*.keystore

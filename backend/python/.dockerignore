@@ -1,0 +1,6 @@
+.env
+.env.*
+var/
+vendor/
+node_modules/
+config/jwt/
