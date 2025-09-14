@@ -42,6 +42,7 @@ services:
     environment:
       APP_ENV: dev
       DATABASE_URL: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}?serverVersion=8.0&charset=utf8mb4"
+      SIMULATOR_BASE_URL: http://backend-python:8001
       TZ: ${TIMEZONE}
     ports:
       - "${PHP_PORT}:8000"
@@ -51,10 +52,15 @@ services:
       - php_vendor:/app/vendor
       - php_var:/app/var
     command: >
-      sh -c "
-        composer install --no-interaction &&
+      sh -lc "
+        if [ -f composer.json ]; then
+          composer install --no-interaction;
+        else
+          echo 'composer.json not found – did you run create-project?';
+        fi;
         php -S 0.0.0.0:8000 -t public
       "
+
 
   backend-python:
     build: ./backend/python
