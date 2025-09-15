@@ -9,95 +9,132 @@ use Dompdf\Options;
 
 final class PdfExporter
 {
-    public function renderSimulation(Simulation $s): string
+    public function make(Simulation $simulation): string
     {
-        $result = $s->getResultJson();
-        $input  = $s->getInputJson();
+        // Données
+        $input  = (array) $simulation->getInputJson();
+        $result = (array) $simulation->getResultJson();
+        $client = $simulation->getClient();
 
-        $html = $this->buildHtml($s, $input, $result);
+        // Helpers
+        $eur = fn($v) => number_format((float)($v ?? 0), 2, ',', ' ') . ' €';
+        $n0  = fn($v) => number_format((float)($v ?? 0), 0, ',', ' ') . ' €';
+        $id  = $simulation->getId();
 
+        // Date (Europe/Paris)
+        $tz = new \DateTimeZone('Europe/Paris');
+        $createdAt = $simulation->getCreatedAt();
+        $createdStr = $createdAt
+            ? $createdAt->setTimezone($tz)->format('d/m/Y H:i')
+            : (new \DateTimeImmutable('now', $tz))->format('d/m/Y H:i');
+
+        // Champs Résultats
+        $monthly    = $eur($result['monthly_payment_eur']    ?? null);
+        $loanAmount = $eur($result['loan_amount_eur']        ?? null);
+        $notaryFee  = $eur($result['notary_fee_eur']         ?? null);
+        $agencyFee  = $eur($result['agency_fee_eur']         ?? null);
+        $minIncome  = $eur($result['min_monthly_income_eur'] ?? null);
+
+        // Champs Entrée
+        $price   = $n0($input['purchase_price'] ?? null);
+        $down    = $n0($input['down_payment']   ?? null);
+        $works   = $n0($input['works']          ?? null);
+        $years   = (int)($input['years'] ?? 0);
+        $rate    = isset($input['interest_rate_percent'])  ? (float)$input['interest_rate_percent']  : null;
+        $insur   = isset($input['insurance_rate_percent']) ? (float)$input['insurance_rate_percent'] : null;
+
+        $rateStr  = $rate  !== null ? rtrim(rtrim(number_format($rate, 2, ',', ' '), '0'), ',') . ' %' : '—';
+        $insurStr = $insur !== null ? rtrim(rtrim(number_format($insur,2, ',', ' '), '0'), ',') . ' %' : '—';
+
+        // Client
+        $clientEmail = $client?->getEmail() ?: ($input['client']['email'] ?? '—');
+        $clientName  = trim(($input['client']['first_name'] ?? '') . ' ' . ($input['client']['last_name'] ?? ''));
+        if ($clientName === '') $clientName = '—';
+
+        // HTML (layout proche de ta capture)
+        $html = <<<HTML
+<!doctype html>
+<html lang="fr"><head>
+  <meta charset="utf-8">
+  <title>Simulation crédit — Simulio</title>
+  <style>
+    @page { margin: 28px; }
+    body { font-family: "DejaVu Sans", sans-serif; font-size: 12px; color: #111; }
+    h1 { font-size: 18px; margin: 0 0 6px; }
+    .muted { color: #666; }
+    .section { margin-top: 18px; }
+    .box {
+      border: 1px solid #ddd; border-radius: 6px; padding: 10px; background: #fafafa;
+      margin: 8px 0 14px;
+    }
+    .label { font-weight: 600; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background: #f5f5f5; text-align: left; }
+    .w50 { width: 50%; }
+    .right { text-align: right; }
+    .footer { margin-top: 20px; color: #666; font-size: 10px; }
+  </style>
+</head>
+<body>
+
+  <h1>Simulation crédit — Simulio</h1>
+  <div class="muted">Généré: {$createdStr}</div>
+
+  <div class="box">
+    <div><span class="label">Client:</span> {$clientName} — {$clientEmail}</div>
+    <div><span class="label">ID simulation:</span> {$id}</div>
+  </div>
+
+  <div class="section">
+    <div class="label" style="margin-bottom:6px;">Résultats</div>
+    <table>
+      <tbody>
+        <tr><th class="w50">Mensualité</th><td class="right">{$monthly}</td></tr>
+        <tr><th>Montant du prêt</th><td class="right">{$loanAmount}</td></tr>
+        <tr><th>Frais de notaire</th><td class="right">{$notaryFee}</td></tr>
+        <tr><th>Frais d'agence</th><td class="right">{$agencyFee}</td></tr>
+        <tr><th>Revenu mensuel minimum</th><td class="right">{$minIncome}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="label" style="margin-bottom:6px;">Entrée</div>
+    <table>
+      <tbody>
+        <tr><th class="w50">Prix du bien</th><td class="right">{$price}</td></tr>
+        <tr><th>Apport</th><td class="right">{$down}</td></tr>
+        <tr><th>Travaux</th><td class="right">{$works}</td></tr>
+        <tr><th>Durée</th><td class="right">{$years} ans</td></tr>
+        <tr><th>Taux intérêt</th><td class="right">{$rateStr}</td></tr>
+        <tr><th>Taux assurance</th><td class="right">{$insurStr}</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="footer">© Simulio — Document généré automatiquement.</div>
+
+</body></html>
+HTML;
+
+        // Dompdf
         $options = new Options();
-        $options->set('isRemoteEnabled', true);
-        $options->set('defaultFont', 'DejaVu Sans'); // accents
+        $options->set('defaultFont', 'DejaVu Sans');
+        $options->setIsHtml5ParserEnabled(true);
+        $options->setIsRemoteEnabled(false);
 
         $dompdf = new Dompdf($options);
         $dompdf->loadHtml($html, 'UTF-8');
         $dompdf->setPaper('A4', 'portrait');
         $dompdf->render();
 
-        return $dompdf->output(); // bytes
-    }
+        // Pagination bas de page
+        $canvas  = $dompdf->getCanvas();
+        $metrics = $dompdf->getFontMetrics();
+        $font    = $metrics->get_font("DejaVu Sans", "normal");
+        $canvas->page_text($canvas->get_width()-120, $canvas->get_height()-28, "Page {PAGE_NUM}/{PAGE_COUNT}", $font, 9, [0.42,0.42,0.42]);
 
-    /** @param array<string,mixed> $input @param array<string,mixed> $result */
-    private function buildHtml(Simulation $s, array $input, array $result): string
-    {
-        $fmt = static fn(float $v): string => number_format($v, 2, ',', ' ');
-
-        // ----- Precompute formatted values (NO function calls in HEREDOC) -----
-        $monthFmt  = $fmt((float)($result['monthly_payment_eur'] ?? 0));
-        $notaryFmt = $fmt((float)($result['notary_fee_eur'] ?? 0));
-        $agencyFmt = $fmt((float)($result['agency_fee_eur'] ?? 0));
-        $loanFmt   = $fmt((float)($result['loan_amount_eur'] ?? 0));
-        $incomeFmt = $fmt((float)($result['min_monthly_income_eur'] ?? 0));
-
-        $purchaseFmt  = $fmt((float)($input['purchase_price'] ?? 0));
-        $downFmt      = $fmt((float)($input['down_payment'] ?? 0));
-        $worksFmt     = $fmt((float)($input['works'] ?? 0));
-        $yearsVal     = (int)($input['years'] ?? 0);
-        $interestVal  = isset($input['interest_rate_percent'])  ? (string)$input['interest_rate_percent']  : '-';
-        $insuranceVal = isset($input['insurance_rate_percent']) ? (string)$input['insurance_rate_percent'] : '-';
-
-        $client = $s->getClient();
-        $clientStr = $client ? sprintf(
-            '%s %s — %s',
-            htmlspecialchars($client->getFirstName(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-            htmlspecialchars($client->getLastName(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-            htmlspecialchars($client->getEmail(), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')
-        ) : 'N/A';
-
-        $generatedAt = $s->getCreatedAt()->format('d/m/Y H:i');
-        $simId       = (string)$s->getId();
-
-        return <<<HTML
-<!doctype html>
-<html lang="fr"><meta charset="utf-8"><style>
-  body{font-family: DejaVu Sans, sans-serif; color:#111; font-size:12px}
-  h1{font-size:18px;margin:0 0 6px}
-  h2{font-size:14px;margin:16px 0 6px}
-  table{border-collapse:collapse;width:100%}
-  th,td{border:1px solid #ddd;padding:8px;text-align:left}
-  .muted{color:#666}
-  .box{border:1px solid #e5e7eb;padding:12px;border-radius:8px;margin:8px 0}
-</style><body>
-  <h1>Simulation crédit — Simulio</h1>
-  <div class="muted">Généré: {$generatedAt}</div>
-
-  <div class="box">
-    <strong>Client:</strong> {$clientStr}<br/>
-    <strong>ID simulation:</strong> {$simId}
-  </div>
-
-  <h2>Résultats</h2>
-  <table>
-    <tr><th>Mensualité</th><td>{$monthFmt} €</td></tr>
-    <tr><th>Montant du prêt</th><td>{$loanFmt} €</td></tr>
-    <tr><th>Frais de notaire</th><td>{$notaryFmt} €</td></tr>
-    <tr><th>Frais d'agence</th><td>{$agencyFmt} €</td></tr>
-    <tr><th>Revenu mensuel minimum</th><td>{$incomeFmt} €</td></tr>
-  </table>
-
-  <h2>Entrée</h2>
-  <table>
-    <tr><th>Prix du bien</th><td>{$purchaseFmt} €</td></tr>
-    <tr><th>Apport</th><td>{$downFmt} €</td></tr>
-    <tr><th>Travaux</th><td>{$worksFmt} €</td></tr>
-    <tr><th>Durée</th><td>{$yearsVal} ans</td></tr>
-    <tr><th>Taux intérêt</th><td>{$interestVal} %</td></tr>
-    <tr><th>Taux assurance</th><td>{$insuranceVal} %</td></tr>
-  </table>
-
-  <p class="muted">© Simulio — Document généré automatiquement.</p>
-</body></html>
-HTML;
+        return $dompdf->output();
     }
 }

@@ -2,152 +2,124 @@
 
 declare(strict_types=1);
 
+// src/Controller/SimulationController.php
 namespace App\Controller;
 
-use App\Dto\ClientDto;
-use App\Dto\SimulationRequest;
 use App\Entity\Client;
 use App\Entity\Simulation;
 use App\Service\SimulatorClient;
 use App\Service\PdfExporter;
 use Doctrine\ORM\EntityManagerInterface;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\Response;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\{JsonResponse, Request, Response};
 use Symfony\Component\Routing\Annotation\Route;
-use Symfony\Component\Validator\Validator\ValidatorInterface;
 
-final class SimulationController
+final class SimulationController extends AbstractController
 {
     public function __construct(
         private readonly SimulatorClient $simulator,
         private readonly EntityManagerInterface $em,
-        private readonly ValidatorInterface $validator,
     ) {}
 
     #[Route('/api/simulations', methods: ['POST'])]
     public function create(Request $request): JsonResponse
     {
-        try {
-            /** @var array<string,mixed> $payload */
-            $payload = json_decode($request->getContent(), true, flags: JSON_THROW_ON_ERROR);
-        } catch (\Throwable) {
-            return new JsonResponse(['detail' => 'Invalid JSON body'], 400);
-        }
+        $user = $this->getUser();
+        if (!$user) return new JsonResponse(['detail'=>'Unauthorized'], 401);
 
-        $dto = SimulationRequest::fromArray($payload);
-        $violations = $this->validator->validate($dto);
-        if (\count($violations) > 0) {
-            $errs = [];
-            foreach ($violations as $v) {
-                $errs[] = ['field' => (string)$v->getPropertyPath(), 'message' => (string)$v->getMessage()];
-            }
-            return new JsonResponse(['detail' => $errs], 422);
-        }
+        $payload = json_decode($request->getContent(), true) ?: [];
 
-        // Upsert client if provided
+        // client_id ou client inline
         $client = null;
-        if ($dto->client instanceof ClientDto) {
-            $clientRepo = $this->em->getRepository(Client::class);
-            $client = $clientRepo->findOneBy(['email' => $dto->client->email]) ?? new Client();
-            $client
-                ->setFirstName($dto->client->first_name)
-                ->setLastName($dto->client->last_name)
-                ->setEmail($dto->client->email)
-                ->setPhone($dto->client->phone)
-                ->setAddress($dto->client->address);
+        if (!empty($payload['client_id'])) {
+            $client = $this->em->getRepository(Client::class)
+                ->findOneBy(['id' => (int)$payload['client_id'], 'user' => $user]);
+            if (!$client) return new JsonResponse(['detail' => 'client_id not found'], 404);
+        } elseif (!empty($payload['client'])) {
+            $c = $payload['client'];
+            $client = $this->em->getRepository(Client::class)->findOneBy([
+                'email' => $c['email'] ?? null,
+                'user'  => $user,
+            ]) ?? (new Client())->setUser($user);
+            $client->setFirstName($c['first_name'] ?? '')
+                   ->setLastName($c['last_name'] ?? '')
+                   ->setEmail($c['email'] ?? '')
+                   ->setPhone($c['phone'] ?? '')
+                   ->setAddress($c['address'] ?? '');
             $this->em->persist($client);
         }
 
-        // Call FastAPI
-        $pythonInput = $dto->toPythonPayload();
+        // appel simulateur
         try {
-            $result = $this->simulator->simulate($pythonInput);
+            $result = $this->simulator->simulate($payload);
         } catch (\Throwable $e) {
-            return new JsonResponse(['detail' => 'Simulator error', 'error' => $e->getMessage()], 502);
+            return new JsonResponse(['detail'=>'Simulator error','error'=>$e->getMessage()], 502);
         }
 
-        // Persist simulation
-        $s = (new Simulation())
+        $simulation = (new Simulation())
+            ->setUser($user)
             ->setClient($client)
-            ->setInputJson($pythonInput)
+            ->setInputJson($payload)
             ->setResultJson($result)
-            ->setMonthlyPaymentEur(number_format((float)($result['monthly_payment_eur'] ?? 0), 2, '.', ''));
-        $this->em->persist($s);
+            ->setMonthlyPaymentEur((float) ($result['monthly_payment_eur'] ?? $result['result']['monthly_payment_eur'] ?? 0));
+
+        $this->em->persist($simulation);
         $this->em->flush();
 
-        return new JsonResponse([
-            'id' => $s->getId(),
-            'result' => $result,
-        ], 201);
+        return new JsonResponse(['id'=>$simulation->getId(),'result'=>$result], 201);
     }
 
     #[Route('/api/simulations', methods: ['GET'])]
-    public function list(Request $request): JsonResponse
+    public function history(Request $req): JsonResponse
     {
-        $page  = max(1, (int)$request->query->get('page', 1));
-        $limit = max(1, min(100, (int)$request->query->get('limit', 20)));
-        $offset = ($page - 1) * $limit;
+        $user = $this->getUser();
+        if (!$user) return new JsonResponse(['detail'=>'Unauthorized'], 401);
 
-        $repo = $this->em->getRepository(Simulation::class);
-        $qb = $repo->createQueryBuilder('s')
-            ->orderBy('s.createdAt', 'DESC')
-            ->setFirstResult($offset)
-            ->setMaxResults($limit);
+        $page = max(1, (int) $req->query->get('page', 1));
+        $limit = max(1, min(100, (int) $req->query->get('limit', 20)));
 
-        $items = $qb->getQuery()->getResult();
+        $items = $this->em->getRepository(Simulation::class)->findBy(
+            ['user' => $user],
+            ['id' => 'DESC'],
+            $limit,
+            ($page-1)*$limit
+        );
 
-        $out = array_map(static function (Simulation $s): array {
-            return [
-                'id' => $s->getId(),
-                'client_email' => $s->getClient()?->getEmail(),
-                'created_at' => $s->getCreatedAt()->format(\DateTimeInterface::ATOM),
-                'monthly_payment_eur' => (float)$s->getMonthlyPaymentEur(),
-            ];
-        }, $items);
+        $rows = array_map(static fn (Simulation $s) => [
+            'id' => $s->getId(),
+            'created_at' => $s->getCreatedAt()->format(\DateTimeInterface::ATOM),
+            'client_email' => $s->getClient()?->getEmail(),
+            'monthly_payment_eur' => (float)$s->getMonthlyPaymentEur(),
+        ], $items);
 
-        return new JsonResponse([
-            'page' => $page,
-            'limit' => $limit,
-            'items' => $out,
-        ]);
-    }
-
-    #[Route('/api/simulations/{id}', methods: ['GET'])]
-    public function show(int $id): JsonResponse
-    {
-        $sim = $this->em->find(Simulation::class, $id);
-        if (!$sim) {
-            return new JsonResponse(['detail' => 'Not found'], 404);
-        }
-        return new JsonResponse([
-            'id' => $sim->getId(),
-            'client' => $sim->getClient() ? [
-                'first_name' => $sim->getClient()->getFirstName(),
-                'last_name'  => $sim->getClient()->getLastName(),
-                'email'      => $sim->getClient()->getEmail(),
-            ] : null,
-            'input'  => $sim->getInputJson(),
-            'result' => $sim->getResultJson(),
-            'created_at' => $sim->getCreatedAt()->format(\DateTimeInterface::ATOM),
-        ]);
+        return new JsonResponse(['items' => $rows]);
     }
 
     #[Route('/api/simulations/{id}/pdf', methods: ['GET'])]
-    public function pdf(int $id, PdfExporter $pdf): Response
+    public function pdf(Simulation $simulation, PdfExporter $pdf): Response
     {
-        $sim = $this->em->find(Simulation::class, $id);
-        if (!$sim) {
-            return new JsonResponse(['detail' => 'Not found'], 404);
+        if ($simulation->getUser() !== $this->getUser()) {
+            return new Response('', 403);
         }
+        try {
+            $binary = $pdf->make($simulation);
+            return new Response($binary, 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'attachment; filename="simulation-'.$simulation->getId().'.pdf"',
+            ]);
+        } catch (\Throwable $e) {
+            // log si tu veux: $this->container->get('logger')->error('PDF error: '.$e->getMessage(), ['exception'=>$e]);
+            return new JsonResponse(['detail' => 'PDF generation failed'], 500);
+        }
+    }
 
-        $bytes = $pdf->renderSimulation($sim);
-        $filename = sprintf('simulation-%d.pdf', $sim->getId());
-
-        return new Response($bytes, 200, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
-            'Cache-Control' => 'no-store',
-        ]);
+    #[Route('/api/simulations/{id}', methods: ['DELETE'])]
+    public function delete(Simulation $simulation): JsonResponse
+    {
+        if ($simulation->getUser() !== $this->getUser()) {
+            return new JsonResponse(['detail'=>'Forbidden'], 403);
+        }
+        $this->em->remove($simulation); $this->em->flush();
+        return new JsonResponse(null, 204);
     }
 }

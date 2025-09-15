@@ -1,53 +1,26 @@
 <?php
-
-declare(strict_types=1);
-
 namespace App\Dto;
 
 use Symfony\Component\Validator\Constraints as Assert;
 
 final class ClientDto
 {
-    #[Assert\NotBlank]
-    #[Assert\Length(max: 100)]
-    public string $first_name;
+    public function __construct(
+        #[Assert\NotBlank] public string $first_name,
+        #[Assert\NotBlank] public string $last_name,
+        #[Assert\Email]    public string $email,
+        public ?string $phone = null,
+        public ?string $address = null,
+    ) {}
 
-    #[Assert\NotBlank]
-    #[Assert\Length(max: 100)]
-    public string $last_name;
-
-    #[Assert\NotBlank]
-    #[Assert\Email]
-    #[Assert\Length(max: 180)]
-    public string $email;
-
-    #[Assert\Length(max: 50)]
-    public ?string $phone = null;
-
-    #[Assert\Length(max: 1000)]
-    public ?string $address = null;
-
-    /** @param array<string,mixed> $data */
-    public static function fromArray(array $data): self
-    {
-        $c = new self();
-        $c->first_name = (string)($data['first_name'] ?? '');
-        $c->last_name  = (string)($data['last_name'] ?? '');
-        $c->email      = (string)($data['email'] ?? '');
-        $c->phone      = isset($data['phone']) ? (string)$data['phone'] : null;
-        $c->address    = isset($data['address']) ? (string)$data['address'] : null;
-        return $c;
-    }
-
-    /** @return array<string,mixed> */
-    public function toArray(): array
-    {
-        return [
-            'first_name' => $this->first_name,
-            'last_name'  => $this->last_name,
-            'email'      => $this->email,
-            'phone'      => $this->phone,
-            'address'    => $this->address,
-        ];
+    /** @param array<string,mixed> $a */
+    public static function fromArray(array $a): self {
+        return new self(
+            (string)($a['first_name'] ?? ''),
+            (string)($a['last_name']  ?? ''),
+            (string)($a['email']      ?? ''),
+            isset($a['phone'])   ? (string)$a['phone']   : null,
+            isset($a['address']) ? (string)$a['address'] : null,
+        );
     }
 }

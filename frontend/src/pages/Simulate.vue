@@ -1,11 +1,15 @@
+<!-- src/pages/Simulate.vue -->
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { api, type SimulationInput, type CreatedSimulation } from '@/lib/apiClients'
+import { api, type SimulationInput, type CreatedSimulation, type Client } from '@/lib/apiClients'
 import { eur } from '@/lib/formats'
 
 const loading = ref(false)
 const result = ref<CreatedSimulation['result'] | null>(null)
 const createdId = ref<number | null>(null)
+
+const clients = ref<Client[]>([])
+const selectedClientId = ref<number | null>(null)
 
 const form = ref<SimulationInput>({
   years: 25,
@@ -19,7 +23,13 @@ const form = ref<SimulationInput>({
   appreciation_rate_percent: 1,
   acquisition_month: 7,
   acquisition_year: 2025,
-  client: { first_name: 'Chris', last_name: 'Depasqual', email: 'chris@example.com', phone: '0600000000', address: 'Paris' },
+  client: {
+    first_name: 'Chris',
+    last_name: 'Depasqual',
+    email: 'chris@example.com',
+    phone: '0600000000',
+    address: 'Paris',
+  },
 })
 
 const canSubmit = computed(() =>
@@ -28,45 +38,85 @@ const canSubmit = computed(() =>
   form.value.interest_rate_percent >= 0
 )
 
-const snack = ref<{open:boolean;text:string;color:'info'|'success'|'error'}>({open:false,text:'',color:'info'})
+const snack = ref<{open:boolean;text:string;color:'info'|'success'|'error'}>({
+  open:false, text:'', color:'info'
+})
 
 async function submit() {
   try {
     loading.value = true
-    const res = await api.simulate(form.value)
+    const payload: any = { ...form.value }
+    if (selectedClientId.value) {
+      payload.client_id = selectedClientId.value
+      delete payload.client
+    }
+    const res = await api.simulate(payload)
     result.value = res.result
     createdId.value = res.id
     snack.value = { open:true, text:'Simulation créée ✅', color:'success' }
   } catch (e: any) {
-    snack.value = { open:true, text:'Erreur simulation: ' + e.message, color:'error' }
+    snack.value = { open:true, text:'Erreur simulation: ' + (e.message || 'inconnue'), color:'error' }
   } finally {
     loading.value = false
   }
 }
 
-/** URL du PDF quand une simulation vient d’être créée */
-const pdfUrl = computed(() =>
-  createdId.value != null ? `/api/simulations/${createdId.value}/pdf` : ''
-)
+const downloading = ref(false)
+async function downloadPdf() {
+  if (!createdId.value) return
+  try {
+    downloading.value = true
+    const blob = await api.pdf(createdId.value)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `simulation-${createdId.value}.pdf`
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
+  } finally {
+    downloading.value = false
+  }
+}
 
-/** Validation */
+/** Validation helpers */
 const required = (v:any) => (v !== null && v !== undefined && v !== '' ? true : 'Requis')
 const positive = (v:number) => (v >= 0 || 'Doit être ≥ 0')
 const between = (min:number,max:number) => (v:number) => (v>=min && v<=max || `Entre ${min} et ${max}`)
 
-/** Sauvegarde/restauration du formulaire */
-onMounted(() => {
+/** Init: charger clients + restaurer le formulaire */
+onMounted(async () => {
+  try {
+    const res = await api.listClients()
+    clients.value = res.items
+  } catch { /* ignore */ }
+
   const saved = localStorage.getItem('simulio:form')
   if (saved) {
-    try { Object.assign(form.value, JSON.parse(saved)) } catch {}
+    try { form.value = JSON.parse(saved) } catch { /* ignore */ }
   }
 })
+
 watch(form, (v) => localStorage.setItem('simulio:form', JSON.stringify(v)), { deep:true })
 </script>
 
 <template>
   <v-container class="py-6" fluid>
     <v-row class="mx-auto" style="max-width:1100px">
+
+      <!-- Sélection d’un client existant -->
+      <v-col cols="12">
+        <v-autocomplete
+          v-model="selectedClientId"
+          :items="clients"
+          item-title="email"
+          item-value="id"
+          label="Attribuer la simulation à un client (optionnel)"
+          clearable
+          hint="Si tu choisis un client, les champs en dessous sont facultatifs."
+          persistent-hint
+        />
+      </v-col>
+
       <!-- Colonne gauche : Formulaire -->
       <v-col cols="12" lg="6">
         <v-card elevation="1" class="pa-4">
@@ -74,102 +124,58 @@ watch(form, (v) => localStorage.setItem('simulio:form', JSON.stringify(v)), { de
 
           <v-row dense>
             <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="form.purchase_price"
-                label="Prix du bien"
-                type="number" min="0" suffix="€"
-                :rules="[required, positive]"
-              />
+              <v-text-field v-model.number="form.purchase_price" label="Prix du bien"
+                            type="number" min="0" suffix="€" :rules="[required, positive]" />
             </v-col>
 
             <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="form.works"
-                label="Travaux"
-                type="number" min="0" suffix="€"
-                :rules="[required, positive]"
-              />
+              <v-text-field v-model.number="form.works" label="Travaux"
+                            type="number" min="0" suffix="€" :rules="[required, positive]" />
             </v-col>
 
             <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="form.agency_fee_rate_percent"
-                label="Frais d'agence"
-                type="number" min="0" step="0.1" suffix="%"
-                :rules="[required, positive]"
-              />
+              <v-text-field v-model.number="form.agency_fee_rate_percent" label="Frais d'agence"
+                            type="number" min="0" step="0.1" suffix="%" :rules="[required, positive]" />
             </v-col>
 
             <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="form.years"
-                label="Durée du prêt (années)"
-                type="number" min="1"
-                :rules="[required, (v:number)=>v>=1||'≥ 1']"
-              />
+              <v-text-field v-model.number="form.years" label="Durée du prêt (années)"
+                            type="number" min="1" :rules="[required, (v:number)=>v>=1||'≥ 1']" />
             </v-col>
 
             <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="form.down_payment"
-                label="Apport"
-                type="number" min="0" suffix="€"
-                :rules="[required, positive]"
-              />
+              <v-text-field v-model.number="form.down_payment" label="Apport"
+                            type="number" min="0" suffix="€" :rules="[required, positive]" />
             </v-col>
 
             <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="form.notary_fee_rate_percent"
-                label="Frais de notaire"
-                type="number" min="0" step="0.1" suffix="%"
-                :rules="[required, positive]"
-              />
+              <v-text-field v-model.number="form.notary_fee_rate_percent" label="Frais de notaire"
+                            type="number" min="0" step="0.1" suffix="%" :rules="[required, positive]" />
             </v-col>
 
             <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="form.interest_rate_percent"
-                label="Taux d'intérêt"
-                type="number" min="0" step="0.01" suffix="%"
-                :rules="[required, positive]"
-              />
+              <v-text-field v-model.number="form.interest_rate_percent" label="Taux d'intérêt"
+                            type="number" min="0" step="0.01" suffix="%" :rules="[required, positive]" />
             </v-col>
 
             <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="form.insurance_rate_percent"
-                label="Taux d'assurance"
-                type="number" min="0" step="0.01" suffix="%"
-                :rules="[required, positive]"
-              />
+              <v-text-field v-model.number="form.insurance_rate_percent" label="Taux d'assurance"
+                            type="number" min="0" step="0.01" suffix="%" :rules="[required, positive]" />
             </v-col>
 
             <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="form.appreciation_rate_percent"
-                label="Revalorisation du bien"
-                type="number" min="0" step="0.1" suffix="%/an"
-                :rules="[required, positive]"
-              />
+              <v-text-field v-model.number="form.appreciation_rate_percent" label="Revalorisation du bien"
+                            type="number" min="0" step="0.1" suffix="%/an" :rules="[required, positive]" />
             </v-col>
 
             <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="form.acquisition_month"
-                label="Mois d'acquisition"
-                type="number" min="1" max="12"
-                :rules="[required, between(1,12)]"
-              />
+              <v-text-field v-model.number="form.acquisition_month" label="Mois d'acquisition"
+                            type="number" min="1" max="12" :rules="[required, between(1,12)]" />
             </v-col>
 
             <v-col cols="12" sm="6">
-              <v-text-field
-                v-model.number="form.acquisition_year"
-                label="Année d'acquisition"
-                type="number" min="1990"
-                :rules="[required, (v:number)=>v>=1990||'≥ 1990']"
-              />
+              <v-text-field v-model.number="form.acquisition_year" label="Année d'acquisition"
+                            type="number" min="1990" :rules="[required, (v:number)=>v>=1990||'≥ 1990']" />
             </v-col>
           </v-row>
 
@@ -178,13 +184,8 @@ watch(form, (v) => localStorage.setItem('simulio:form', JSON.stringify(v)), { de
               Calculer
             </v-btn>
 
-            <v-btn
-              v-if="createdId"
-              :href="pdfUrl"
-              target="_blank"
-              variant="tonal"
-              color="primary"
-            >
+            <v-btn v-if="createdId" :loading="downloading" @click="downloadPdf"
+                   variant="tonal" color="primary">
               Télécharger le PDF
             </v-btn>
           </div>

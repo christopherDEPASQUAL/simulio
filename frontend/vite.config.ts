@@ -13,9 +13,7 @@ export default defineConfig({
   },
   server: {
     proxy: {
-      // IMPORTANT : mets ici le nom de service Docker du backend
-      // D’après tes logs, c’est probablement "backend_php".
-      // Si ton service s’appelle différemment (ex: backend-php), change la valeur.
+
       '/api': {
         target: 'http://backend-php:8000',
         changeOrigin: true,

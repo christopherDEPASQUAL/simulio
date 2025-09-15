@@ -41,8 +41,11 @@ services:
         condition: service_healthy
     environment:
       APP_ENV: dev
-      DATABASE_URL: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}?serverVersion=8.0&charset=utf8mb4"
+      # Utilise 8001 (port interne du service backend-python)
       SIMULATOR_BASE_URL: http://backend-python:8001
+      DATABASE_URL: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@mysql:3306/${MYSQL_DATABASE}?serverVersion=8.0&charset=utf8mb4"
+      CORS_ALLOW_ORIGIN: "http://localhost:5173"
+      JWT_PASSPHRASE: "changeit"
       TZ: ${TIMEZONE}
     ports:
       - "${PHP_PORT}:8000"

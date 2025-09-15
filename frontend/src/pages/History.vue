@@ -13,61 +13,45 @@ const headers = [
 
 const items = ref<HistoryItem[]>([])
 const loading = ref(true)
+const downloadingId = ref<number|null>(null)
 
 async function load() {
   loading.value = true
+  try { items.value = (await api.history(1, 50)).items }
+  finally { loading.value = false }
+}
+async function downloadPdf(id:number) {
   try {
-    const res = await api.history(1, 50)
-    items.value = res.items
+    downloadingId.value = id
+    const blob = await api.pdf(id)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `simulation-${id}.pdf`
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
   } finally {
-    loading.value = false
+    downloadingId.value = null
   }
 }
-
 onMounted(load)
 </script>
 
 <template>
-  <v-container class="py-6" fluid>
-    <v-row class="mx-auto" style="max-width:1100px">
-      <v-col cols="12">
-        <v-card elevation="1">
-          <div class="d-flex align-center justify-space-between pa-4">
-            <h2 class="text-h6">Historique des simulations</h2>
-            <v-btn variant="tonal" :loading="loading" @click="load">Rafraîchir</v-btn>
-          </div>
-
-          <v-data-table
-            :headers="headers"
-            :items="items"
-            :loading="loading"
-            items-per-page="10"
-          >
-            <template #item.created_at="{ item }">
-              {{ new Date(item.created_at).toLocaleString('fr-FR') }}
-            </template>
-
-            <template #item.monthly_payment_eur="{ item }">
-              {{ eur(item.monthly_payment_eur) }}
-            </template>
-
-            <template #item.actions="{ item }">
-              <v-btn size="small" variant="tonal" color="primary"
-                    :href="`/api/simulations/${item.id}/pdf`" target="_blank" rel="noopener">
-                PDF
-              </v-btn>
-            </template>
-
-            <template #no-data>
-              <div class="pa-6 text-medium-emphasis">Aucune simulation pour l’instant.</div>
-            </template>
-
-            <template #loading>
-              <v-skeleton-loader type="table-row@5"></v-skeleton-loader>
-            </template>
-          </v-data-table>
-        </v-card>
-      </v-col>
-    </v-row>
-  </v-container>
+  <!-- ... -->
+  <v-data-table :headers="headers" :items="items" :loading="loading" items-per-page="10">
+    <template #item.created_at="{ item }">
+      {{ new Date(item.created_at).toLocaleString('fr-FR') }}
+    </template>
+    <template #item.monthly_payment_eur="{ item }">
+      {{ eur(item.monthly_payment_eur) }}
+    </template>
+    <template #item.actions="{ item }">
+      <v-btn size="small" variant="tonal" color="primary"
+            :loading="downloadingId === item.id"
+            @click="downloadPdf(item.id)">
+        PDF
+      </v-btn>
+    </template>
+  </v-data-table>
 </template>

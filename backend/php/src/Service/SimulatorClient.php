@@ -1,7 +1,5 @@
 <?php
-
-declare(strict_types=1);
-
+// src/Service/SimulatorClient.php
 namespace App\Service;
 
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -10,31 +8,29 @@ final class SimulatorClient
 {
     public function __construct(
         private HttpClientInterface $http,
-        private string $baseUrl = 'http://backend-python:8001',
-    ) {}
+        string $baseUrl,
+    ) {
+        $this->baseUrl = rtrim($baseUrl, '/');
+    }
 
-    /**
-     * @param array<string,mixed> $input Payload attendu par FastAPI /simulate
-     * @return array<string,mixed>      Résultat JSON du microservice
-     */
-    public function simulate(array $input): array
+    private string $baseUrl;
+
+    /** @return array<string,mixed> */
+    public function simulate(array $payload): array
     {
-        $url = rtrim($this->baseUrl, '/') . '/simulate';
-
-        $response = $this->http->request('POST', $url, [
-            'json' => $input,
+        $res    = $this->http->request('POST', $this->baseUrl . '/simulate', [
+            'json'    => $payload,
             'timeout' => 10,
+            'headers' => ['Accept' => 'application/json'],
         ]);
 
-        $status = $response->getStatusCode();
-        $data   = $response->toArray(false); // ne jette pas sur 4xx/5xx
+        $status = $res->getStatusCode();
+        $body   = $res->toArray(false); // ne jette pas sur 4xx/5xx
 
         if ($status >= 400) {
-            $body = is_array($data) ? json_encode($data, JSON_UNESCAPED_SLASHES) : (string)$data;
-            throw new \RuntimeException(sprintf('Simulator error %d: %s', $status, $body));
+            throw new UpstreamException($status, \is_array($body) ? $body : [], 'Simulator responded with error');
         }
 
-        /** @var array<string,mixed> $data */
-        return $data;
+        return \is_array($body) ? $body : [];
     }
 }

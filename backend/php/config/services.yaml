@@ -1,11 +1,13 @@
-parameters:
-  simulator.base_url: '%env(string:SIMULATOR_BASE_URL)%'
+# config/services.yaml
+parameters: { }
 
 services:
+  # Valeurs par défaut pour tous les services
   _defaults:
-    autowire: true
-    autoconfigure: true
+    autowire: true      # Injecte automatiquement les dépendances des services
+    autoconfigure: true # Enregistre automatiquement les tags adéquats
 
+  # Enregistre tous les services de src/ (sauf exceptions ci-dessous)
   App\:
     resource: '../src/'
     exclude:
@@ -13,11 +15,14 @@ services:
       - '../src/Entity/'
       - '../src/Kernel.php'
 
+  # (Optionnel) Import spécifique des contrôleurs avec le tag controller.service_arguments
   App\Controller\:
     resource: '../src/Controller/'
-    public: true
     tags: ['controller.service_arguments']
 
+  # ---- Configuration explicite du SimulatorClient ----
   App\Service\SimulatorClient:
     arguments:
-      $baseUrl: '%simulator.base_url%'
+      $baseUrl: '%env(resolve:SIMULATOR_BASE_URL)%'
+      # Si ton constructeur a aussi une $apiKey :
+      # $apiKey: '%env(SIMULATOR_API_KEY)%'
