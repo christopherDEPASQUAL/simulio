@@ -102,6 +102,14 @@ export const api = {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     })),
 
+    searchClients: async (q = '', page = 1, perPage = 50) =>
+    json<{ items: Client[] }>(
+      await authFetch(apiUrl(`/api/clients?search=${encodeURIComponent(q)}&page=${page}&limit=${perPage}`), {
+        // évite d’éventuels caches agressifs du navigateur/proxy
+        cache: 'no-store',
+      })
+    ),
+
   updateClient: async (id: number, payload: Partial<Client>) =>
     ok(await authFetch(apiUrl(`/api/clients/${id}`), {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
