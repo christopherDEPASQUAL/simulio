@@ -12,9 +12,9 @@
 *.crt
 
 # DB dumps / backups
-*.sql
-*.dump
-*.bak
+# *.sql
+# *.dump
+# *.bak
 
 # --- Frontend (Vite / Vue / Nuxt) ---
 frontend/node_modules/
@@ -63,7 +63,7 @@ backend/python/.pytest_cache/
 
 # --- OS / Editors ---
 .DS_Store
-Thumbs.db
+# Thumbs.db
 .vscode/
 .idea/
 
