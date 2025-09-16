@@ -11,10 +11,11 @@ const logout = () => auth.logout()
 
       <v-spacer />
 
-      <v-btn to="/simulate" variant="text">Simulation</v-btn>
-      <v-btn to="/history"  variant="text">Historique</v-btn>
-
+      
       <template v-if="auth.isAuthenticated">
+        <v-btn to="/simulate" variant="text">Simulation</v-btn>
+        <v-btn to="/history"  variant="text">Historique</v-btn>
+        <v-btn to="/clients" variant="text">Clients</v-btn>
         <span class="mx-3 text-medium-emphasis">
           {{ auth.user?.first_name }} {{ auth.user?.last_name }}
         </span>

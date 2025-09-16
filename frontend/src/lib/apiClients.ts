@@ -77,6 +77,13 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 const apiUrl = (p: string) => `${BASE_URL}/${p.replace(/^\/+/, '')}`
+async function ok(res: Response): Promise<void> {
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`${res.status} ${res.statusText}${text ? ` - ${text}` : ''}`)
+  }
+}
+
 
 export const api = {
   simulate: async (payload: SimulationInput) =>
@@ -95,8 +102,16 @@ export const api = {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     })),
 
+  updateClient: async (id: number, payload: Partial<Client>) =>
+    ok(await authFetch(apiUrl(`/api/clients/${id}`), {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+    })),
+
+  deleteClient: async (id: number) =>
+    ok(await authFetch(apiUrl(`/api/clients/${id}`), { method: 'DELETE' })),
+
   deleteSimulation: async (id: number) =>
-    json<void>(await authFetch(apiUrl(`/api/simulations/${id}`), { method: 'DELETE' })),
+    ok(await authFetch(apiUrl(`/api/simulations/${id}`), { method: 'DELETE' })),
 
   pdf: async (id: number) => {
     const res = await authFetch(apiUrl(`/api/simulations/${id}/pdf`))

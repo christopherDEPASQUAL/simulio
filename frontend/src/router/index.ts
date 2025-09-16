@@ -6,6 +6,7 @@ const routes = [
   { path: '/', redirect: '/simulate' },
   { path: '/simulate', component: () => import('@/pages/Simulate.vue'), meta:{ requiresAuth:true } },
   { path: '/history',  component: () => import('@/pages/History.vue'),  meta:{ requiresAuth:true } },
+  { path: '/clients', component: () => import('@/pages/Clients.vue'), meta: { requiresAuth: true } },
   { path: '/login',    component: () => import('@/views/auth/Login.vue') },
   { path: '/register', component: () => import('@/views/auth/Register.vue') },
   { path: '/:pathMatch(.*)*', redirect: '/simulate' },

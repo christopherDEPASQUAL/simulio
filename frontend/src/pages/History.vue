@@ -14,6 +14,13 @@ const headers = [
 const items = ref<HistoryItem[]>([])
 const loading = ref(true)
 const downloadingId = ref<number|null>(null)
+const deletingId = ref<number|null>(null)
+async function onDeleteSim(id:number){
+  if(!confirm('Supprimer cette simulation ?')) return
+  deletingId.value = id
+  try { await api.deleteSimulation(id); await load() } finally { deletingId.value = null }
+}
+
 
 async function load() {
   loading.value = true
@@ -52,6 +59,12 @@ onMounted(load)
             @click="downloadPdf(item.id)">
         PDF
       </v-btn>
+
+      <v-btn size="small" variant="text" color="error"
+            class="ml-2"
+            @click="onDeleteSim(item.id)">
+        Supprimer
+        </v-btn>
     </template>
   </v-data-table>
 </template>

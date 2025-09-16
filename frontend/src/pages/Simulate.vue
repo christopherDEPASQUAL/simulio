@@ -53,7 +53,7 @@ async function submit() {
     const res = await api.simulate(payload)
     result.value = res.result
     createdId.value = res.id
-    snack.value = { open:true, text:'Simulation créée ✅', color:'success' }
+    snack.value = { open:true, text:'Simulation créée', color:'success' }
   } catch (e: any) {
     snack.value = { open:true, text:'Erreur simulation: ' + (e.message || 'inconnue'), color:'error' }
   } finally {

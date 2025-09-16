@@ -4,70 +4,81 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Entity\Client;
-use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\EntityManagerInterface as EM;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\{JsonResponse, Request};
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Validator\Validator\ValidatorInterface;
 
 #[Route('/api/clients')]
 final class ClientController extends AbstractController
 {
+    public function __construct(private EM $em, private ValidatorInterface $validator) {}
+
     #[Route('', methods: ['GET'])]
-    public function list(EntityManagerInterface $em): JsonResponse
-    {
-        $user = $this->getUser();
-        if (!$user) {
-            return new JsonResponse(['detail' => 'Unauthorized'], 401);
+    public function list(Request $req): JsonResponse {
+        $user = $this->getUser(); if (!$user) return new JsonResponse(['detail'=>'Unauthorized'],401);
+        $page  = max(1, (int)$req->query->get('page', 1));
+        $limit = max(1, min(100, (int)$req->query->get('limit', 20)));
+        $q     = trim((string)$req->query->get('search',''));
+
+        $qb = $this->em->getRepository(Client::class)->createQueryBuilder('c')
+            ->andWhere('c.user = :u')->setParameter('u',$user)
+            ->orderBy('c.id','DESC')
+            ->setFirstResult(($page-1)*$limit)->setMaxResults($limit);
+
+        if ($q !== '') {
+            $qb->andWhere('LOWER(c.email) LIKE :q OR LOWER(c.firstName) LIKE :q OR LOWER(c.lastName) LIKE :q')
+               ->setParameter('q','%'.mb_strtolower($q).'%');
         }
 
-        $items = $em->getRepository(Client::class)
-            ->findBy(['user' => $user], ['id' => 'DESC']);
+        $items = array_map(fn(Client $c)=>[
+            'id'=>$c->getId(),'first_name'=>$c->getFirstName(),'last_name'=>$c->getLastName(),
+            'email'=>$c->getEmail(),'phone'=>$c->getPhone(),'address'=>$c->getAddress()
+        ], $qb->getQuery()->getResult());
 
-        $rows = array_map(static fn (Client $c) => [
-            'id'         => $c->getId(),
-            'first_name' => $c->getFirstName(),
-            'last_name'  => $c->getLastName(),
-            'email'      => $c->getEmail(),
-            'phone'      => $c->getPhone(),
-            'address'    => $c->getAddress(),
-            'user_id'    => $c->getUser()?->getId(),
-            'created_at' => $c->getCreatedAt()->format(\DateTimeInterface::ATOM),
-        ], $items);
-
-        return new JsonResponse(['items' => $rows]);
+        return new JsonResponse(['items'=>$items]);
     }
 
     #[Route('', methods: ['POST'])]
-    public function create(Request $req, EntityManagerInterface $em): JsonResponse
-    {
-        $user = $this->getUser();
-        if (!$user) {
-            return new JsonResponse(['detail' => 'Unauthorized'], 401);
-        }
+    public function create(Request $req): JsonResponse {
+        $user = $this->getUser(); if (!$user) return new JsonResponse(['detail'=>'Unauthorized'],401);
+        $p = json_decode($req->getContent(), true) ?? [];
+        $c = (new Client())->setUser($user)
+            ->setFirstName($p['first_name'] ?? '')
+            ->setLastName($p['last_name'] ?? '')
+            ->setEmail($p['email'] ?? '')
+            ->setPhone($p['phone'] ?? '')
+            ->setAddress($p['address'] ?? '');
 
-        $data = json_decode($req->getContent(), true) ?: [];
+        $errors = $this->validator->validate($c);
+        if (count($errors)) return new JsonResponse(['detail' => (string)$errors], 422);
 
-        $client = (new Client())
-            ->setUser($user)
-            ->setFirstName($data['first_name'] ?? '')
-            ->setLastName($data['last_name'] ?? '')
-            ->setEmail($data['email'] ?? '')
-            ->setPhone($data['phone'] ?? '')
-            ->setAddress($data['address'] ?? '');
+        $this->em->persist($c); $this->em->flush();
+        return new JsonResponse(['id'=>$c->getId()], 201);
+    }
 
-        $em->persist($client);
-        $em->flush();
+    #[Route('/{id}', methods: ['PUT'])]
+    public function update(Client $c, Request $req): JsonResponse {
+        if ($c->getUser() !== $this->getUser()) return new JsonResponse(['detail'=>'Forbidden'],403);
+        $p = json_decode($req->getContent(), true) ?? [];
+        $c->setFirstName($p['first_name'] ?? $c->getFirstName())
+          ->setLastName($p['last_name'] ?? $c->getLastName())
+          ->setEmail($p['email'] ?? $c->getEmail())
+          ->setPhone($p['phone'] ?? $c->getPhone())
+          ->setAddress($p['address'] ?? $c->getAddress());
 
-        return new JsonResponse([
-            'id'         => $client->getId(),
-            'first_name' => $client->getFirstName(),
-            'last_name'  => $client->getLastName(),
-            'email'      => $client->getEmail(),
-            'phone'      => $client->getPhone(),
-            'address'    => $client->getAddress(),
-            'user_id'    => $client->getUser()?->getId(),
-            'created_at' => $client->getCreatedAt()->format(\DateTimeInterface::ATOM),
-        ], 201);
+        $errors = $this->validator->validate($c);
+        if (count($errors)) return new JsonResponse(['detail' => (string)$errors], 422);
+
+        $this->em->flush();
+        return new JsonResponse(null, 204);
+    }
+
+    #[Route('/{id}', methods: ['DELETE'])]
+    public function delete(Client $c): JsonResponse {
+        if ($c->getUser() !== $this->getUser()) return new JsonResponse(['detail'=>'Forbidden'],403);
+        $this->em->remove($c); $this->em->flush();
+        return new JsonResponse(null, 204);
     }
 }
